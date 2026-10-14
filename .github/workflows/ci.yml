@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (pin); toolchain via input
         with:
-          toolchain: stable
+          toolchain: nightly-2026-09-30
           components: rustfmt
       - name: cargo fmt --check
         run: cargo fmt --all --check
@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (pin); toolchain via input
         with:
-          toolchain: stable
+          toolchain: nightly-2026-09-30
       - name: cargo check (parton)
         run: cargo check -p parton
 
@@ -39,7 +39,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (pin); toolchain via input
         with:
-          toolchain: stable
+          toolchain: nightly-2026-09-30
           components: clippy
       - name: cargo clippy (parton)
         run: cargo clippy -p parton --all-targets --all-features -- -D warnings
@@ -50,7 +50,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (pin); toolchain via input
         with:
-          toolchain: stable
+          toolchain: nightly-2026-09-30
       - name: cargo test (parton)
         run: cargo test -p parton
 
@@ -60,7 +60,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (pin); toolchain via input
         with:
-          toolchain: stable
+          toolchain: nightly-2026-09-30
       - name: cargo doc (deny warnings)
         env:
           RUSTDOCFLAGS: "-D warnings"
@@ -82,27 +82,26 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (pin); toolchain via input
         with:
-          toolchain: stable
+          toolchain: nightly-2026-09-30
       - name: Security audit
         run: |
           cargo install cargo-audit --locked
           cargo audit
 
-  # Coverage floor ≥64% (ratchet toward 90%).
-  # Ratchet toward 90% over time; fail PRs that regress below the floor.
+  # Coverage floor is 64% lines; ratchet toward 90% over time. PRs that regress below
+  # the floor fail.
   coverage:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (pin); toolchain via input
         with:
-          toolchain: stable
+          toolchain: nightly-2026-09-30
           components: llvm-tools-preview
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@7572810d7dd469b651bb7793945692cf78da5dd7 # v2.85.0
         with:
           tool: cargo-llvm-cov
       - name: Line coverage floor (≥64%)
-        # Floor tracks current llvm-cov after GrowFs / host-action surface landed; raise when
-        # unit coverage for those paths catches up (last green main had no coverage job).
+        # Raise the floor when unit coverage of the GrowFs / host-action paths catches up.
         run: cargo llvm-cov -p parton --fail-under-lines 64 --summary-only
