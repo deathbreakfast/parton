@@ -6,9 +6,7 @@
 //! environment, so neither password appears in argv, the response, or logs.
 
 use super::super::secret_env::validate_deploy_secret_env_entry;
-use super::super::types::{
-    ContainerActionRequest, SecretEnvVar, TemplatedExecId, ROTATE_NEW_PASSWORD_ENV,
-};
+use super::super::types::{ContainerActionRequest, SecretEnvVar, TemplatedExecId};
 use anyhow::Context;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -18,8 +16,15 @@ const CH_PASSWORD_OVERRIDE_PATH: &str =
     "/etc/clickhouse-server/users.d/zz-nucleus-rotated-password.xml";
 
 /// `nucleus` always; `nucleus_repl` only when the role exists. `\getenv` needs psql 15+.
+///
+/// The session first stops the server from logging or recording the `ALTER ROLE` text, which
+/// carries the password: no statement logging, no failed-statement logging, and no
+/// `pg_stat_statements` utility tracking (a placeholder setting when the extension isn't loaded).
 const PG_ROTATE_SCRIPT: &str = r"set -eu
 psql -q -v ON_ERROR_STOP=1 -U nucleus -d postgres <<'SQL'
+SET log_statement = 'none';
+SET log_min_error_statement = panic;
+SET pg_stat_statements.track_utility = off;
 \getenv pw PARTON_ROTATE_NEW_PASSWORD
 ALTER ROLE nucleus PASSWORD :'pw';
 SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'nucleus_repl') AS has_repl \gset
@@ -53,12 +58,19 @@ try { ok = admin.auth('nucleus', process.env.PARTON_ROTATE_OLD_PASSWORD || '').o
 if (!ok) { admin.auth('nucleus', process.env.PARTON_ROTATE_NEW_PASSWORD) } \
 admin.changeUserPassword('nucleus', process.env.PARTON_ROTATE_NEW_PASSWORD)";
 
+/// Stores only the SHA-256 of the new password, and removes the image's plaintext `<password>`
+/// from the merged config (`ClickHouse` rejects a user with two password fields).
 fn ch_rotate_script() -> String {
     format!(
         r#"set -eu
 f={CH_PASSWORD_OVERRIDE_PATH}
 umask 077
-printf '<clickhouse><users><default><password><![CDATA[%s]]></password></default></users></clickhouse>\n' "$PARTON_ROTATE_NEW_PASSWORD" > "$f.tmp"
+h=$(printf '%s' "$PARTON_ROTATE_NEW_PASSWORD" | sha256sum | cut -d' ' -f1)
+if [ "${{#h}}" -ne 64 ]; then
+  echo "sha256sum failed" >&2
+  exit 1
+fi
+printf '<clickhouse><users><default><password remove="remove"/><password_sha256_hex>%s</password_sha256_hex></default></users></clickhouse>\n' "$h" > "$f.tmp"
 chown clickhouse:clickhouse "$f.tmp" 2>/dev/null || true
 mv "$f.tmp" "$f"
 "#
@@ -73,8 +85,8 @@ mv "$f.tmp" "$f"
 /// # Errors
 ///
 /// `secret_env_not_allowed` / `secret_env_name_not_allowed` / `secret_env_duplicate` /
-/// `secret_env_empty` / `secret_env_missing` / `secret_env_value_invalid`, or the newline and
-/// name checks from [`validate_deploy_secret_env_entry`]. Messages never include values.
+/// `secret_env_empty` / `secret_env_missing`, or the newline and name checks from
+/// [`validate_deploy_secret_env_entry`]. Messages never include values.
 pub(crate) fn validate_rotation_secret_env(
     template: TemplatedExecId,
     vars: &[SecretEnvVar],
@@ -97,12 +109,6 @@ pub(crate) fn validate_rotation_secret_env(
         validate_deploy_secret_env_entry(name, v.value.as_str())?;
         if v.value.is_empty() {
             anyhow::bail!("secret_env_empty: {name}");
-        }
-        if matches!(template, TemplatedExecId::ChRotatePassword)
-            && name == ROTATE_NEW_PASSWORD_ENV
-            && v.value.contains("]]>")
-        {
-            anyhow::bail!("secret_env_value_invalid: {name}");
         }
         seen.push(name);
     }

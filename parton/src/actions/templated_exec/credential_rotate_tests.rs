@@ -212,6 +212,15 @@ fn pg_rotate_renders_both_roles_via_getenv() {
     let script = &argv[6];
     assert!(script.contains(r"\getenv pw PARTON_ROTATE_NEW_PASSWORD"));
     assert!(script.contains("ALTER ROLE nucleus PASSWORD :'pw';"));
+    let first_alter = script.find("ALTER ROLE").expect("alter");
+    for guard in [
+        "SET log_statement = 'none';",
+        "SET log_min_error_statement = panic;",
+        "SET pg_stat_statements.track_utility = off;",
+    ] {
+        let at = script.find(guard).expect(guard);
+        assert!(at < first_alter, "{guard} must run before ALTER ROLE");
+    }
     assert!(script.contains("ALTER ROLE nucleus_repl PASSWORD :'pw';"));
     assert!(script.contains(r"\if :has_repl"));
     assert!(
@@ -260,8 +269,13 @@ fn ch_rotate_writes_users_d_override() {
     assert_eq!(resp.message, "ch_rotate_password ok");
     let script = &argv_of(&runner)[6];
     assert!(script.contains("/etc/clickhouse-server/users.d/zz-nucleus-rotated-password.xml"));
-    assert!(script.contains("<![CDATA[%s]]>"));
-    assert!(script.contains(r#""$PARTON_ROTATE_NEW_PASSWORD""#));
+    assert!(script.contains(r#"printf '%s' "$PARTON_ROTATE_NEW_PASSWORD" | sha256sum"#));
+    assert!(script
+        .contains(r#"<password remove="remove"/><password_sha256_hex>%s</password_sha256_hex>"#));
+    assert!(
+        !script.contains("<password>"),
+        "no plaintext password element"
+    );
 }
 
 #[test]
@@ -382,12 +396,17 @@ fn allowlist_rejects_newline_in_value() {
 }
 
 #[test]
-fn allowlist_rejects_cdata_terminator_for_clickhouse() {
-    assert_rejected(
-        TemplatedExecId::ChRotatePassword,
-        vec![secret(ROTATE_NEW_PASSWORD_ENV, "abc]]>def")],
-        "secret_env_value_invalid",
-    );
+fn ch_rotate_accepts_xml_metacharacters_since_only_the_hash_is_written() {
+    let runner = EnvFileRunner::new(true, "", "");
+    let resp = run_templated_exec_with(
+        &request(
+            TemplatedExecId::ChRotatePassword,
+            vec![secret(ROTATE_NEW_PASSWORD_ENV, "abc]]><x/>&def")],
+        ),
+        &runner,
+    )
+    .expect("resp");
+    assert!(resp.success);
 }
 
 #[test]

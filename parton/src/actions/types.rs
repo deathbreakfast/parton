@@ -190,8 +190,8 @@ pub enum TemplatedExecId {
     /// Override the `default` user's password with a `users.d` file that `ClickHouse` reloads.
     ///
     /// The official image defines `default` in read-only users.xml storage, so `ALTER USER`
-    /// cannot change it. The new password comes from [`ROTATE_NEW_PASSWORD_ENV`] and must not
-    /// contain `]]>`.
+    /// cannot change it. The script hashes [`ROTATE_NEW_PASSWORD_ENV`] in the container and writes
+    /// only `<password_sha256_hex>`, so the file at rest holds no plaintext.
     ChRotatePassword,
     /// `nats-server --signal reload=1`: re-read the server config (auth block included).
     ///
