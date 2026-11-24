@@ -9,6 +9,13 @@
 //! and sharded templates run `mongosh --eval` scripts. `ClickHouse` distributed / Keeper quorum
 //! templates apply remote-server and quorum configuration inside the container.
 //!
+//! Credential-rotation templates ([`TemplatedExecId::PgRotatePassword`],
+//! [`TemplatedExecId::RedisRotatePassword`], [`TemplatedExecId::MongoChangeUserPassword`],
+//! [`TemplatedExecId::ChRotatePassword`], [`TemplatedExecId::NatsAuthReload`]) change the password
+//! a running engine accepts. They are the only templates that take `secret_env_vars`, and only
+//! the names [`TemplatedExecId::rotation_secret_env`] allows. Parton hands the values to
+//! `docker exec --env-file` through a short-lived `0600` file, so they never reach argv.
+//!
 //! The control plane / orchestrator owns role swap and reconcile orchestration; deploy,
 //! [`GrowFs`](crate::GrowFsSpec), and diagnostic action kinds live in sibling modules.
 //!
@@ -118,9 +125,30 @@
 //! };
 //! let _ = copy;
 //! ```
+//!
+//! Rotate a Postgres primary's `nucleus` / `nucleus_repl` password. The control plane resolves
+//! the Neutrino refs at claim time; the request carries only the resolved secret env:
+//!
+//! ```no_run
+//! use parton::{
+//!     SecretEnvVar, TemplatedExecId, TemplatedExecParams, TemplatedExecSpec,
+//!     ROTATE_NEW_PASSWORD_ENV,
+//! };
+//!
+//! let rotate = TemplatedExecSpec {
+//!     template: TemplatedExecId::PgRotatePassword,
+//!     params: TemplatedExecParams::default(),
+//! };
+//! let secret_env_vars = vec![SecretEnvVar {
+//!     name: ROTATE_NEW_PASSWORD_ENV.into(),
+//!     value: "resolved-at-claim".into(),
+//! }];
+//! let _ = (rotate, secret_env_vars);
+//! ```
 
 mod clickhouse_bulk_copy;
 mod clickhouse_rmt;
+mod credential_rotate;
 mod mongodb_rs;
 mod mongodb_sharded;
 mod postgres_bulk_copy;
@@ -135,6 +163,7 @@ use super::types::{
 };
 use clickhouse_bulk_copy::run_ch_shard_bulk_copy;
 use clickhouse_rmt::clickhouse_templated_exec_argv;
+use credential_rotate::{rotation_exec_argv, validate_rotation_secret_env, RotationEnvFile};
 use mongodb_rs::mongodb_templated_exec_argv;
 use mongodb_sharded::mongodb_sharded_templated_exec_argv;
 use postgres_bulk_copy::run_pg_shard_bulk_copy;
@@ -155,6 +184,7 @@ pub(crate) fn run_templated_exec_with(
     let container_ref = request.container_ref.trim();
     let params = spec.params.validate_for(spec.template)?;
     let template = spec.template;
+    validate_rotation_secret_env(template, &request.secret_env_vars)?;
 
     tracing::info!(
         target: "parton.templated_exec",
@@ -163,8 +193,21 @@ pub(crate) fn run_templated_exec_with(
         "templated_exec starting"
     );
 
-    let (success, message, payload_extra) =
-        dispatch_templated_exec(container_ref, template, &params, runner)?;
+    // Only rotation templates get past the allowlist with secret env; the file is removed on drop.
+    let env_file = if request.secret_env_vars.is_empty() {
+        None
+    } else {
+        Some(RotationEnvFile::write(request)?)
+    };
+    let dispatched = dispatch_templated_exec(
+        container_ref,
+        template,
+        &params,
+        env_file.as_ref().map(RotationEnvFile::path),
+        runner,
+    );
+    drop(env_file);
+    let (success, message, payload_extra) = dispatched?;
 
     if success {
         tracing::info!(
@@ -198,9 +241,29 @@ fn dispatch_templated_exec(
     container_ref: &str,
     template: TemplatedExecId,
     params: &ValidatedTemplatedExecParams,
+    env_file: Option<&std::path::Path>,
     runner: &dyn DockerCliRunner,
 ) -> anyhow::Result<(bool, &'static str, serde_json::Value)> {
     Ok(match template {
+        TemplatedExecId::PgRotatePassword
+        | TemplatedExecId::RedisRotatePassword
+        | TemplatedExecId::MongoChangeUserPassword
+        | TemplatedExecId::ChRotatePassword
+        | TemplatedExecId::NatsAuthReload => {
+            let argv = rotation_exec_argv(container_ref, template, env_file);
+            let output = runner.run(&argv)?;
+            // Engine output stays out of the response; only the static message and status go back.
+            let (success, message) =
+                classify_promote_outcome(template, output.status_success, &output.combined());
+            (
+                success,
+                message,
+                serde_json::json!({
+                    "template": template.as_str(),
+                    "status_success": output.status_success,
+                }),
+            )
+        }
         TemplatedExecId::PgPromote
         | TemplatedExecId::RedisReplicaofNoOne
         | TemplatedExecId::ChPromote => {
@@ -395,3 +458,7 @@ pub(super) fn run_templated_exec(
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "credential_rotate_tests.rs"]
+mod credential_rotate_tests;
