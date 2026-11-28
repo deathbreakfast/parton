@@ -320,6 +320,7 @@ mod directives_wire;
 mod heartbeat;
 mod host_info;
 pub mod identity;
+pub mod mtls;
 pub mod spiffe_client;
 mod ssrf_guard;
 

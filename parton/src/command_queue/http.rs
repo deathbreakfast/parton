@@ -33,7 +33,7 @@ pub async fn post_claim_action(
     token: Option<&str>,
 ) -> anyhow::Result<Option<ClaimedNodeActionBody>> {
     let url = format!("{}/actions/claim", agent_api_base.trim_end_matches('/'));
-    let client = reqwest::Client::builder()
+    let client = crate::mtls::client_builder()?
         .timeout(std::time::Duration::from_mins(2))
         .build()
         .context("build HTTP client for claim request")?;
@@ -88,7 +88,7 @@ pub async fn post_extend_action_lease(
         "{}/actions/extend-lease",
         agent_api_base.trim_end_matches('/')
     );
-    let client = reqwest::Client::builder()
+    let client = crate::mtls::client_builder()?
         .timeout(std::time::Duration::from_mins(1))
         .build()
         .context("build HTTP client for extend-lease request")?;
@@ -123,7 +123,7 @@ pub async fn post_action_result(
     token: Option<&str>,
 ) -> anyhow::Result<()> {
     let url = format!("{}/actions/result", agent_api_base.trim_end_matches('/'));
-    let client = reqwest::Client::builder()
+    let client = crate::mtls::client_builder()?
         .timeout(std::time::Duration::from_mins(2))
         .build()
         .context("build HTTP client for action result request")?;

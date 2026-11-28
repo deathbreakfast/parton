@@ -36,12 +36,15 @@ tracing-subscriber = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 thiserror = { workspace = true }
+rcgen = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "net"] }
 serial_test = "3"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+rcgen = { workspace = true, features = ["x509-parser"] }
 criterion = { workspace = true }
 
 [[bench]]

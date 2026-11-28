@@ -35,6 +35,8 @@ described in [`examples/README.md`](https://github.com/unified-field-dev/parton/
 | `PARTON_CELL_ID` | `local-default` | Cell/group identifier |
 | `PARTON_HEARTBEAT_INTERVAL_SECS` | `10` | Heartbeat interval seconds |
 | `PARTON_SHARED_TOKEN` | _(unset)_ | Shared token (`x-parton-token`); required for production shared-token auth |
+| `PARTON_CP_CA_PATH` | _(unset)_ | CA bundle for the control plane. When set, Parton trusts only this CA, requires an `https` `PARTON_HEARTBEAT_URL`, and presents its client certificate (see [Agent mTLS](#agent-mtls)) |
+| `PARTON_STATE_DIR` | `/etc/parton` | Where the host key, CSR and signed client certificate are stored |
 | `PARTON_AUTH_MODE` | `shared_token` | `shared_token` / `dual` / `spiffe`; see [`docs/spiffe.md`](https://github.com/unified-field-dev/parton/blob/main/docs/spiffe.md) |
 | `PARTON_COSIGN_MODE` | `off` | `off` / `key` / `keyless`; cosign verify before pull/run |
 | `PARTON_ENROLLMENT_TOKEN` | _(unset)_ | One-time enrollment token |
@@ -63,3 +65,12 @@ See the [root README](https://github.com/unified-field-dev/parton#verify) for ve
 crate docs plus [`docs/spiffe.md`](https://github.com/unified-field-dev/parton/blob/main/docs/spiffe.md)
 for auth modes.
 
+## Agent mTLS
+
+With `PARTON_CP_CA_PATH` set and `PARTON_ENROLLMENT_TOKEN` (`ghe.<id>.<secret>`) present, Parton generates its own key on the first heartbeat and asks the control plane to sign it. The key never leaves the host.
+
+1. Writes `client.key` (mode 0600) and `client.csr` under `PARTON_STATE_DIR`.
+2. Sends `POST <heartbeat-origin>/api/parton/enroll/sign-csr` with `{"enrollment_id": "<id>", "token": "<full token>", "csr_pem": "..."}`.
+3. Stores the response `{"cert_pem": "...", "chain_pem": "..."}` (`chain_pem` optional) as `client.crt`.
+
+Later calls to the control plane (heartbeat, action claim, result and lease extension) present that certificate and verify the server against the CA. If the endpoint answers 404 or 501, Parton logs a warning and keeps heartbeating without a certificate. Other failures are logged and retried on the next beat. Certificate renewal is not implemented yet.
