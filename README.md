@@ -18,7 +18,8 @@ a strict policy, and applies signed re-enroll and revoke directives.
 - Docker lifecycle: start, stop, restart, logs, inspect, deploy, ensure network/image
 - Host ops: `probe_host`, `diagnostic` (SSRF-gated), `grow_fs`, WireGuard peer apply
 - Allowlisted `templated_exec`: engine ops without free-text shell (Postgres, Redis,
-  ClickHouse, MongoDB)
+  ClickHouse, MongoDB), including credential rotation and NATS auth reload, with passwords
+  passed through secret env only
 - Queue-only kinds: `health_check`, handoff deploy/teardown, bundle import
 - Auth: shared token or SPIFFE, sealed enrollment, Ed25519 handoff directives
 - Policy: digest-pinned images by default, host networking and mounts denied, optional cosign

@@ -70,7 +70,12 @@ pub(crate) fn promote_exec_argv(
         | TemplatedExecId::MongoConfigRsAdd
         | TemplatedExecId::MongoShardsvrEnable
         | TemplatedExecId::MongoAddShard
-        | TemplatedExecId::MongoMoveChunk => Vec::new(),
+        | TemplatedExecId::MongoMoveChunk
+        | TemplatedExecId::PgRotatePassword
+        | TemplatedExecId::RedisRotatePassword
+        | TemplatedExecId::MongoChangeUserPassword
+        | TemplatedExecId::ChRotatePassword
+        | TemplatedExecId::NatsAuthReload => Vec::new(),
     }
 }
 
@@ -180,6 +185,11 @@ fn promote_success_message(id: TemplatedExecId) -> &'static str {
         TemplatedExecId::MongoShardsvrEnable => "mongo_shardsvr_enable ok",
         TemplatedExecId::MongoAddShard => "mongo_add_shard ok",
         TemplatedExecId::MongoMoveChunk => "mongo_move_chunk ok",
+        TemplatedExecId::PgRotatePassword => "pg_rotate_password ok",
+        TemplatedExecId::RedisRotatePassword => "redis_rotate_password ok",
+        TemplatedExecId::MongoChangeUserPassword => "mongo_change_user_password ok",
+        TemplatedExecId::ChRotatePassword => "ch_rotate_password ok",
+        TemplatedExecId::NatsAuthReload => "nats_auth_reload ok",
     }
 }
 
@@ -263,6 +273,16 @@ fn classify_promote_failure(id: TemplatedExecId, lower: &str) -> (bool, &'static
         TemplatedExecId::MongoShardsvrEnable => (false, "mongo_shardsvr_enable failed"),
         TemplatedExecId::MongoAddShard => (false, "mongo_add_shard failed"),
         TemplatedExecId::MongoMoveChunk => (false, "mongo_move_chunk failed"),
+        TemplatedExecId::PgRotatePassword => (false, "pg_rotate_password failed"),
+        TemplatedExecId::RedisRotatePassword => (false, "redis_rotate_password failed"),
+        TemplatedExecId::MongoChangeUserPassword
+            if lower.contains("not primary") || lower.contains("notwritableprimary") =>
+        {
+            (false, "mongo_change_user_password not_primary")
+        }
+        TemplatedExecId::MongoChangeUserPassword => (false, "mongo_change_user_password failed"),
+        TemplatedExecId::ChRotatePassword => (false, "ch_rotate_password failed"),
+        TemplatedExecId::NatsAuthReload => (false, "nats_auth_reload failed"),
     }
 }
 

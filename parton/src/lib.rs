@@ -329,7 +329,7 @@ pub use actions::{
     ContainerActionKind, ContainerActionRequest, ContainerActionResponse, ContainerHealthCheck,
     DiagnosticMode, DiagnosticSpec, DockerCliActionExecutor, GrowFsSpec, ResourceLimits,
     SecretEnvVar, TemplatedExecId, TemplatedExecParams, TemplatedExecSpec, VolumeMount,
-    WireguardPeerSpec,
+    WireguardPeerSpec, ROTATE_NEW_PASSWORD_ENV, ROTATE_OLD_PASSWORD_ENV,
 };
 pub use agent_runtime::{
     run_heartbeat_step, AgentRuntimeConfig, HeartbeatStepOutcome, PendingReenrollGrace,

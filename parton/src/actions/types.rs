@@ -170,7 +170,40 @@ pub enum TemplatedExecId {
     /// Run on `mongos`. `user` is the target shard name (replica-set name).
     /// `slot_start` is the key value to move (default `0`).
     MongoMoveChunk,
+    /// Set a new password on the `nucleus` and `nucleus_repl` roles (run on the primary).
+    ///
+    /// `psql` reads the new password with `\getenv` from the
+    /// [`ROTATE_NEW_PASSWORD_ENV`] secret env var, so it never appears in argv. The
+    /// `nucleus_repl` change is skipped when that role does not exist.
+    PgRotatePassword,
+    /// `CONFIG SET masterauth` then `CONFIG SET requirepass` via `redis-cli -x` (run on every member).
+    ///
+    /// Logs in with [`ROTATE_OLD_PASSWORD_ENV`] through `REDISCLI_AUTH` and pipes
+    /// [`ROTATE_NEW_PASSWORD_ENV`] on stdin. `requirepass` also replaces the `default` ACL
+    /// user's password.
+    RedisRotatePassword,
+    /// `changeUserPassword('nucleus', …)` via `mongosh --eval` (run on the primary).
+    ///
+    /// Authenticates as `nucleus` with [`ROTATE_OLD_PASSWORD_ENV`] and reads both passwords
+    /// from `process.env`. On a sharded cluster, run it on the config replica-set primary too.
+    MongoChangeUserPassword,
+    /// Override the `default` user's password with a `users.d` file that `ClickHouse` reloads.
+    ///
+    /// The official image defines `default` in read-only users.xml storage, so `ALTER USER`
+    /// cannot change it. The script hashes [`ROTATE_NEW_PASSWORD_ENV`] in the container and writes
+    /// only `<password_sha256_hex>`, so the file at rest holds no plaintext.
+    ChRotatePassword,
+    /// `nats-server --signal reload=1`: re-read the server config (auth block included).
+    ///
+    /// Takes no secret env; the config the server reloads is written outside the container.
+    NatsAuthReload,
 }
+
+/// Secret env var carrying the password an engine should accept after a rotation template.
+pub const ROTATE_NEW_PASSWORD_ENV: &str = "PARTON_ROTATE_NEW_PASSWORD";
+
+/// Secret env var carrying the password the engine accepts now (used to authenticate).
+pub const ROTATE_OLD_PASSWORD_ENV: &str = "PARTON_ROTATE_OLD_PASSWORD";
 
 impl TemplatedExecId {
     /// Stable wire / log label.
@@ -206,6 +239,27 @@ impl TemplatedExecId {
             Self::MongoShardsvrEnable => "mongo_shardsvr_enable",
             Self::MongoAddShard => "mongo_add_shard",
             Self::MongoMoveChunk => "mongo_move_chunk",
+            Self::PgRotatePassword => "pg_rotate_password",
+            Self::RedisRotatePassword => "redis_rotate_password",
+            Self::MongoChangeUserPassword => "mongo_change_user_password",
+            Self::ChRotatePassword => "ch_rotate_password",
+            Self::NatsAuthReload => "nats_auth_reload",
+        }
+    }
+
+    /// Secret env allowlist for credential-rotation templates: `(required, optional)` names.
+    ///
+    /// Returns `None` for every other template, which must not carry secret env.
+    #[must_use]
+    pub fn rotation_secret_env(self) -> Option<(&'static [&'static str], &'static [&'static str])> {
+        const NEW: &[&str] = &[ROTATE_NEW_PASSWORD_ENV];
+        const OLD: &[&str] = &[ROTATE_OLD_PASSWORD_ENV];
+        const BOTH: &[&str] = &[ROTATE_NEW_PASSWORD_ENV, ROTATE_OLD_PASSWORD_ENV];
+        match self {
+            Self::PgRotatePassword | Self::ChRotatePassword => Some((NEW, OLD)),
+            Self::RedisRotatePassword | Self::MongoChangeUserPassword => Some((BOTH, &[])),
+            Self::NatsAuthReload => Some((&[], &[])),
+            _ => None,
         }
     }
 

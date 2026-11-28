@@ -72,6 +72,7 @@ pub use types::{
     ContainerActionKind, ContainerActionRequest, ContainerActionResponse, ContainerHealthCheck,
     DiagnosticMode, DiagnosticSpec, GrowFsSpec, ResourceLimits, SecretEnvVar, TemplatedExecId,
     TemplatedExecParams, TemplatedExecSpec, VolumeMount, WireguardPeerSpec,
+    ROTATE_NEW_PASSWORD_ENV, ROTATE_OLD_PASSWORD_ENV,
 };
 
 /// Abstraction for action execution backends (Docker CLI today, transport in future).
