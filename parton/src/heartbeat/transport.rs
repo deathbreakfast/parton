@@ -45,7 +45,9 @@ async fn send_heartbeat_inner(
     report: &NodeHeartbeatReport,
     token: Option<&str>,
 ) -> anyhow::Result<HeartbeatResponse> {
-    let client = reqwest::Client::new();
+    let client = crate::mtls::client_builder()?
+        .build()
+        .context("build HTTP client for heartbeat request")?;
     let mut request = client
         .post(endpoint)
         .header("x-parton-node-id", report.node_id.as_str())

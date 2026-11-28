@@ -32,6 +32,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.18", default-features = false, features = ["http-listener"] }
 thiserror = "2"
+rcgen = { version = "0.13", default-features = false, features = ["pem", "ring"] }
 criterion = { version = "0.5", default-features = false }
 
 [workspace.lints.rust]

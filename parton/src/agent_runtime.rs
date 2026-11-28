@@ -71,6 +71,7 @@ impl AgentRuntimeConfig {
         let interval_secs = lookup("PARTON_HEARTBEAT_INTERVAL_SECS")
             .and_then(|raw| raw.parse::<u64>().ok())
             .unwrap_or(10);
+        crate::mtls::require_https_when_ca_set(&endpoint)?;
         let token = lookup("PARTON_SHARED_TOKEN");
         let action_lease_secs = lookup("PARTON_ACTION_LEASE_SECS")
             .and_then(|raw| raw.parse::<u64>().ok())
@@ -138,6 +139,7 @@ pub async fn run_heartbeat_step(
     pending_grace: &mut Option<PendingReenrollGrace>,
     enrollment_acknowledged: &mut bool,
 ) -> anyhow::Result<HeartbeatStepOutcome> {
+    maybe_enroll_client_cert(config).await;
     let overrides = HeartbeatReportOverrides {
         applied_directive_token: pending_token.take(),
         apply_failed: pending_fail.take(),
@@ -169,6 +171,24 @@ pub async fn run_heartbeat_step(
             )
         }
         Err(error) => handle_heartbeat_error(&report, pending_fail, pending_grace, &error).await,
+    }
+}
+
+static ENROLL_SETTLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// With `PARTON_CP_CA_PATH` set and an enrollment token present, obtain a client certificate once.
+/// Failures are logged and retried on the next beat; heartbeats continue either way.
+async fn maybe_enroll_client_cert(config: &AgentRuntimeConfig) {
+    use std::sync::atomic::Ordering;
+    if ENROLL_SETTLED.load(Ordering::Relaxed) || crate::mtls::cp_ca_path().is_none() {
+        return;
+    }
+    let Ok(token) = std::env::var("PARTON_ENROLLMENT_TOKEN") else {
+        return;
+    };
+    match crate::mtls::ensure_identity(&config.endpoint, &config.node_id, &token).await {
+        Ok(_) => ENROLL_SETTLED.store(true, Ordering::Relaxed),
+        Err(error) => tracing::warn!(%error, "client certificate enrollment failed; will retry"),
     }
 }
 
