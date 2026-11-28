@@ -223,7 +223,10 @@ pub async fn ensure_identity(
         return Ok(EnrollOutcome::Unsupported);
     }
     if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
+        let body = response
+            .text()
+            .await
+            .unwrap_or_else(|e| format!("<unreadable body: {e}>"));
         anyhow::bail!("sign-csr failed ({status}): {body}");
     }
     let signed: SignCsrResponse = response.json().await.context("decode sign-csr response")?;
